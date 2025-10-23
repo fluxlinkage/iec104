@@ -15,7 +15,7 @@ keywords = [
     "iec60870-5-104",
     "60870-5-104",
     "iec104",
-    "SCADA"
+    "SCADA",
 ]
 
 [dependencies]
@@ -41,13 +41,16 @@ tracing = "0.1.41"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
+chrono = { version = "0.4", optional = true }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["signal"] }
 
 [features]
-multi-thread=[]
+multi-thread = []
+with-chrono = ["chrono"]
 
-default=["multi-thread"]
+default = ["multi-thread", "with-chrono"]
 
 [lints.rust]
 dead_code = "warn"
