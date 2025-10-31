@@ -124,6 +124,7 @@ impl Iec104Connection {
 	) -> Result<Self, Error> {
 		let (stop_watch_tx, stop_watch_rx) = tokio::sync::watch::channel(false);
 		let (send_mpsc_tx, send_mpsc_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER_SIZE);
+		let (send_s_mpsc_tx, send_s_mpsc_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER_SIZE);
 		let (connection_status_watch_tx, connection_status_watch_rx) =
 			tokio::sync::watch::channel(ConnectionStatus::Idle);
 		let (send_result_broadcast_tx, _) = tokio::sync::broadcast::channel(CHANNEL_BUFFER_SIZE);
@@ -156,8 +157,12 @@ impl Iec104Connection {
 		let read_thread_connection = connection.clone();
 		let write_thread_connection = connection.clone();
 		let timer_thread_connection = connection.clone();
-		tokio::task::spawn(read_thread_connection.read_thread(read_half));
-		tokio::task::spawn(write_thread_connection.write_thread(send_mpsc_rx, write_half));
+		tokio::task::spawn(read_thread_connection.read_thread(send_s_mpsc_tx,read_half));
+		tokio::task::spawn(write_thread_connection.write_thread(
+			send_mpsc_rx,
+			send_s_mpsc_rx,
+			write_half,
+		));
 		connection.callbacks.on_connection_event(ConnectionEvent::Opened).await?;
 		if let ConnectionType::Client = connection.connection_type {
 			connection.send(START_DT_ACT_FRAME.to_owned()).await?;
@@ -516,7 +521,7 @@ impl Iec104Connection {
 		}
 		return Ok(result);
 	}
-	async fn handle_message(&self, dat: Vec<u8>, cache: &mut Vec<u8>) -> Result<(), Error> {
+	async fn handle_message(&self, dat: Vec<u8>, cache: &mut Vec<u8>,send_s_mpsc_tx: &tokio::sync::mpsc::Sender<apdu::SFrame>) -> Result<(), Error> {
 		if cache.is_empty() {
 			*cache = dat;
 		} else {
@@ -646,17 +651,17 @@ impl Iec104Connection {
 			}
 		}
 		if self.unconfirmed_received_i_frames.load(atomic::Ordering::SeqCst) >= self.protocol.w {
-			responses.insert(0, apdu::Frame::S(self.confirm_outstanding_messages()));
+			send_s_mpsc_tx.send(self.confirm_outstanding_messages()).await.whatever_context("Channel error")?;
 		}
-        for telegram in responses{
-            self.send(telegram).await?;
-        }
+		for telegram in responses {
+			self.send(telegram).await?;
+		}
 		if cache.len() > 0 && cache[0] != 104 {
 			snafu::whatever!("Unexpected start byte: {:#02X}.", cache[0]);
 		}
 		return self.callbacks.on_finish_receive_once().await;
 	}
-	async fn read_thread(mut self, mut read_half: tokio::net::tcp::OwnedReadHalf) {
+	async fn read_thread(mut self,send_s_mpsc_tx: tokio::sync::mpsc::Sender<apdu::SFrame>, mut read_half: tokio::net::tcp::OwnedReadHalf) {
 		let mut cache = Vec::new();
 		let mut buffer = [0u8; VEC_BUFFER_SIZE];
 		loop {
@@ -665,7 +670,7 @@ impl Iec104Connection {
 					match res{
 						Ok(len) => {
 							if len > 0{
-								if let Err(e)=self.handle_message(buffer[..len].to_vec(), &mut cache).await{
+								if let Err(e)=self.handle_message(buffer[..len].to_vec(), &mut cache,&send_s_mpsc_tx).await{
 									self.callbacks.on_error(snafu::FromString::with_source(e.into(), "Handling received data failed.".to_string())).await;
 									break;
 								}
@@ -694,9 +699,39 @@ impl Iec104Connection {
 	async fn write_thread(
 		mut self,
 		mut send_mpsc_rx: tokio::sync::mpsc::Receiver<(u16, bool, apdu::Frame)>,
+		mut send_s_mpsc_rx: tokio::sync::mpsc::Receiver<apdu::SFrame>,
 		mut write_half: tokio::net::tcp::OwnedWriteHalf,
 	) {
 		loop {
+			match send_s_mpsc_rx.try_recv() {
+				Ok(mut sframe) => {
+					sframe.receive_sequence_number=self.load_received_counter();
+					match apdu::Frame::S(sframe).to_apdu_bytes(){
+						Ok(bytes) => match write_half.write_all(&bytes).await{
+							Ok(_) => {}
+							Err(e) => {
+								self.callbacks.on_error(snafu::FromString::with_source(e.into(),"TCP write error".to_string())).await;
+								break;
+							}
+						}
+						Err(e) => {
+							self.callbacks.on_error(snafu::FromString::with_source(e.into(),"Serilize error".to_string())).await;
+							break;
+						}
+					}
+				}
+				Err(e) => {
+					if e != tokio::sync::mpsc::error::TryRecvError::Empty {
+						self.callbacks
+							.on_error(snafu::FromString::with_source(
+								e.into(),
+								"Channel error".to_string(),
+							))
+							.await;
+						break;
+					}
+				}
+			}
 			tokio::select! {
 				res = send_mpsc_rx.recv()=>{
 					match res{
