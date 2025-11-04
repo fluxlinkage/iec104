@@ -94,6 +94,8 @@ impl ConnectionHandler {
 						}
 					} else {
 						tracing::error!("Error receiving command. Aborting...");
+						#[cfg(feature = "extra-callbacks")]
+						self.callback.on_close().await;
 						whatever!("Error receiving command.");
 					}
 				}
@@ -142,6 +144,8 @@ impl ConnectionHandler {
 					#[cfg(feature = "extra-configs")]
 					if !self.config.auto_reconnect {
 						tracing::debug!("Reconnecting disabled");
+						#[cfg(feature = "extra-callbacks")]
+						self.callback.on_close().await;
 						whatever!("Reconnecting disabled.");
 					}
 					tracing::debug!("Reconnecting");
