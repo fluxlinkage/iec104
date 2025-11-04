@@ -66,6 +66,15 @@ pub struct ClientConfig {
 	/// The TLS configuration.
 	#[serde(default)]
 	pub tls: Option<TlsClientConfig>,
+	/// Whether to auto reconnect.
+	#[cfg(feature = "extra-configs")]
+	pub auto_reconnect:bool,
+	/// Whether to apply the TCP_NODELAY option.
+	#[cfg(feature = "extra-configs")]
+	pub tcp_nodelay:bool,
+	/// Whether to apply the SO_KEEPALIVE option.
+	#[cfg(feature = "extra-configs")]
+	pub so_keepalive:bool,
 }
 
 impl Default for ProtocolConfig {
@@ -89,6 +98,12 @@ impl Default for ClientConfig {
 			port: 2404,
 			protocol: ProtocolConfig::default(),
 			tls: None,
+			#[cfg(feature = "extra-configs")]
+			auto_reconnect:true,
+			#[cfg(feature = "extra-configs")]
+			tcp_nodelay:false,
+			#[cfg(feature = "extra-configs")]
+			so_keepalive:false,
 		}
 	}
 }

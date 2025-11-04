@@ -139,6 +139,11 @@ impl ConnectionHandler {
 					);
 				}
 				ConnectionHandlerState::Reconnecting => {
+					#[cfg(feature = "extra-configs")]
+					if !self.config.auto_reconnect {
+						tracing::debug!("Reconnecting disabled");
+						whatever!("Reconnecting disabled.");
+					}
 					tracing::debug!("Reconnecting");
 					let Ok(connection) = Self::make_connection(&self.config).await else {
 						tracing::error!("Error making connection");
@@ -157,6 +162,41 @@ impl ConnectionHandler {
 
 	#[instrument(level = "debug")]
 	async fn make_connection(config: &ClientConfig) -> Result<Connection, Error> {
+		#[cfg(feature = "extra-configs")]
+		let stream = if config.so_keepalive {
+			use std::str::FromStr;
+			let address = std::net::IpAddr::from_str(&config.address)
+				.whatever_context("Invalid IP address")?;
+			let socket = if address.is_ipv6() {
+				tokio::net::TcpSocket::new_v6().whatever_context("Error creating TCP socket")?
+			} else {
+				tokio::net::TcpSocket::new_v4().whatever_context("Error creating TCP socket")?
+			};
+			socket.set_keepalive(true).whatever_context("Error setting TCP socket option")?;
+			if config.tcp_nodelay {
+				socket.set_nodelay(true).whatever_context("Error setting TCP socket option")?;
+			}
+			tokio::time::timeout(
+				config.protocol.t0,
+				socket.connect(std::net::SocketAddr::new(address, config.port)),
+			)
+			.await
+			.whatever_context("Connection timeout")?
+			.whatever_context("Error connecting")?
+		} else {
+			let s = tokio::time::timeout(
+				config.protocol.t0,
+				TcpStream::connect(format!("{}:{}", config.address, config.port)),
+			)
+			.await
+			.whatever_context("Connection timeout")?
+			.whatever_context("Error connecting")?;
+			if config.tcp_nodelay {
+				s.set_nodelay(true).whatever_context("Error setting TCP socket option")?;
+			}
+			s
+		};
+		#[cfg(not(feature = "extra-configs"))]
 		let stream = tokio::time::timeout(
 			config.protocol.t0,
 			TcpStream::connect(format!("{}:{}", config.address, config.port)),
