@@ -430,6 +430,10 @@ impl Client {
 
 		Ok(())
 	}
+
+	pub fn check_out_buffer_full(&self) ->bool {
+		return self.out_buffer_full.load(std::sync::atomic::Ordering::Relaxed);
+	}
 }
 
 impl Debug for Client {
