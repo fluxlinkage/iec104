@@ -139,6 +139,10 @@ impl ConnectionHandler {
 					);
 				}
 				ConnectionHandlerState::Reconnecting => {
+					if !self.config.auto_reconnect {
+						tracing::debug!("Reconnecting disabled");
+						whatever!("Reconnecting disabled.");
+					}
 					tracing::debug!("Reconnecting");
 					let Ok(connection) = Self::make_connection(&self.config).await else {
 						tracing::error!("Error making connection");
@@ -164,6 +168,15 @@ impl ConnectionHandler {
 		.await
 		.whatever_context("Connection timeout")?
 		.whatever_context("Error connecting")?;
+		
+		if config.tcp_nodelay {
+			stream.set_nodelay(true).whatever_context("Error setting TCP socket option")?;
+		}
+		if config.tcp_quickack {
+			tracing::warn!("TCP_QUICKACK not implemented yet! Ignore and continue anyway.");
+			// In the future...
+			// stream.set_quickack(true).whatever_context("Error setting TCP socket option")?;
+		}
 
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;

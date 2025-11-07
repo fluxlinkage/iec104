@@ -66,6 +66,17 @@ pub struct ClientConfig {
 	/// The TLS configuration.
 	#[serde(default)]
 	pub tls: Option<TlsClientConfig>,
+	/// Whether to auto reconnect.
+	/// Sometimes users need custom error handling ( switching to a backup IP, etc ) rather than auto reconnect.
+	pub auto_reconnect:bool,
+	/// Whether to apply the TCP_NODELAY option.
+	/// TCP_NODELAY may reduce network latency.
+	/// Some ill-designed devices may not always split TCP packets correctly, using TCP_NODELAY can reduce the probability of packet sticking, thus reduce error rate.
+	pub tcp_nodelay:bool,
+	/// Whether to apply the TCP_QUICKACK option.
+	/// TCP_QUICKACK may reduce network latency.
+	/// **Currently it is not implemented yet**, becaues tokio >= 1.48.0 is needed and I don't want to increase requirement version ( tokio 1.47 is LTS ).
+	pub tcp_quickack:bool,
 }
 
 impl Default for ProtocolConfig {
@@ -89,6 +100,9 @@ impl Default for ClientConfig {
 			port: 2404,
 			protocol: ProtocolConfig::default(),
 			tls: None,
+			auto_reconnect: true,
+			tcp_nodelay: false,
+			tcp_quickack: false,
 		}
 	}
 }
