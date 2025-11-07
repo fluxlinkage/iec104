@@ -123,6 +123,14 @@ pub struct Client {
 	connection_handler_state: Option<Arc<AtomicConnectionHandlerState>>,
 }
 
+impl Drop for Client{
+	fn drop(&mut self) {
+		if let Some(task)=&self.receive_task{
+			task.abort();
+		}
+	}
+}
+
 impl Client {
 	#[must_use]
 	pub fn new(config: ClientConfig, callback: impl OnNewObjects + Send + Sync + 'static) -> Self {
