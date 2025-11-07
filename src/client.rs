@@ -111,7 +111,7 @@ impl AsyncWrite for Connection {
 
 #[async_trait]
 pub trait OnNewObjects {
-	async fn on_new_objects(&self, asdu: Asdu)->Vec<Asdu>;
+	async fn on_new_objects(&self, asdu: Asdu) -> Vec<Asdu>;
 	#[cfg(feature = "extra-callbacks")]
 	async fn on_close(&self);
 }
@@ -125,9 +125,9 @@ pub struct Client {
 	connection_handler_state: Option<Arc<AtomicConnectionHandlerState>>,
 }
 
-impl Drop for Client{
+impl Drop for Client {
 	fn drop(&mut self) {
-		if let Some(task)=&self.receive_task{
+		if let Some(task) = &self.receive_task {
 			task.abort();
 		}
 	}
