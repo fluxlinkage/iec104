@@ -130,7 +130,10 @@ impl<'a> ReceiveHandler<'a> {
 								if new_t2_instant < self.t2.deadline() {
 									self.t2.as_mut().reset(new_t2_instant);
 								}
-								self.callback.on_new_objects(i.asdu).await;
+								let responses = self.callback.on_new_objects(i.asdu).await;
+								for response in responses {
+									send_queue.push_back(response);
+								}
 							}
 							Frame::S(s) => {
 								self.handle_receive_s_frame(&s)?;

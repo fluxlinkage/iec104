@@ -85,8 +85,9 @@ struct MyCallback;
 
 #[async_trait]
 impl OnNewObjects for MyCallback {
-	async fn on_new_objects(&self, _asdu: Asdu) {
+	async fn on_new_objects(&self, _asdu: Asdu)->Vec<Asdu> {
 		// tracing::info!("Received objects: {objects:?}");
+		return Vec::new();
 	}
 }
 
