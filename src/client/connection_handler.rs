@@ -222,6 +222,14 @@ impl ConnectionHandler {
 		config: &ClientConfig,
 		stream: TcpStream,
 	) -> Result<Connection, Error> {
+		if config.tcp_nodelay {
+			stream.set_nodelay(true).whatever_context("Error setting TCP socket option")?;
+		}
+		if config.tcp_quickack {
+			tracing::warn!("TCP_QUICKACK not implemented yet! Ignore and continue anyway.");
+			// In the future...
+			// stream.set_quickack(true).whatever_context("Error setting TCP socket option")?;
+		}
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
 			Connection::Tls(
