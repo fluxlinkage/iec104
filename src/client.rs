@@ -417,7 +417,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	fn check_connection_started(&self) -> Result<(), ClientError> {
+	pub(crate) fn check_connection_started(&self) -> Result<(), ClientError> {
 		self.check_connected()?;
 
 		if let Some(state) = &self.connection_handler_state
