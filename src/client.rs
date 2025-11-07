@@ -165,13 +165,26 @@ impl Client {
 		Ok(())
 	}
 
+	// Use this function if you want to return error rather than queue ASDU when out buffer is full.
 	#[instrument(level = "debug")]
-	pub async fn send_asdu(&self, asdu: Asdu) -> Result<(), ClientError> {
+	pub async fn send_asdu_check_out_buffer(&self, asdu: Asdu) -> Result<(), ClientError> {
 		self.check_connection_started()?;
 
 		if self.out_buffer_full.load(std::sync::atomic::Ordering::Relaxed) {
 			return errors::OutputBufferFull.fail();
 		}
+
+		if let Some(tx) = &self.write_tx {
+			tx.send(ConnectionHandlerCommand::Asdu(asdu)).await.context(errors::SendCommand)?;
+		} else {
+			return errors::NoWriteChannel.fail();
+		}
+		Ok(())
+	}
+
+	#[instrument(level = "debug")]
+	pub async fn send_asdu(&self, asdu: Asdu) -> Result<(), ClientError> {
+		self.check_connection_started()?;
 
 		if let Some(tx) = &self.write_tx {
 			tx.send(ConnectionHandlerCommand::Asdu(asdu)).await.context(errors::SendCommand)?;

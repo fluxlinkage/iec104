@@ -117,6 +117,7 @@ impl<'a> ReceiveHandler<'a> {
 		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
 		let mut buffer = [0; 255];
+		let mut send_queue=VecDeque::new();
 
 		loop {
 			select! {
@@ -149,9 +150,7 @@ impl<'a> ReceiveHandler<'a> {
 				Some(cmd) = self.rx.recv() => {
 					match cmd {
 						ConnectionHandlerCommand::Asdu(asdu) => {
-							Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
-							self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
-							self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1));
+							send_queue.push_back(asdu);
 						}
 						ConnectionHandlerCommand::Stop => {
 							Self::send_frame(&mut self.write_connection, &STOP_DT_ACT_FRAME).await.whatever_context("Error sending stopDT activation")?;
@@ -186,6 +185,18 @@ impl<'a> ReceiveHandler<'a> {
 					"Received more than w frames without acknowledgement. Sending S frame"
 				);
 				self.confirm_all_messages().await?;
+			}
+			while !send_queue.is_empty(){
+				// Some ASDUs are wait to be sent
+				if self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize{
+					// Out buffer is full, wait until next time
+					break;
+				}
+				// It is guranteed that `send_queue` is not empty.
+				let asdu=send_queue.pop_front().unwrap();
+				Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
+				self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
+				self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1));
 			}
 		}
 	}
