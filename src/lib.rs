@@ -8,3 +8,4 @@ pub mod cot;
 pub mod error;
 pub mod types;
 pub mod types_id;
+pub mod server;

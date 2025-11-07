@@ -71,6 +71,28 @@ impl ConnectionHandler {
 		})
 	}
 
+	pub async fn new_server_side(
+		stream: TcpStream,
+		callback: Arc<dyn OnNewObjects + Send + Sync>,
+		config: ClientConfig,
+		rx: mpsc::Receiver<ConnectionHandlerCommand>,
+		out_buffer_full: Arc<AtomicBool>,
+	) -> Result<Self, Error> {
+		let connection = Self::make_connection_with_stream(&config, stream)
+			.await
+			.whatever_context("Error making connection")?;
+		let (read_connection, write_connection) = tokio::io::split(connection);
+		Ok(Self {
+			callback,
+			config,
+			state: Arc::new(AtomicConnectionHandlerState::new(ConnectionHandlerState::Started)),
+			read_connection,
+			write_connection,
+			rx,
+			out_buffer_full,
+		})
+	}
+
 	pub fn get_state(&self) -> Arc<AtomicConnectionHandlerState> {
 		self.state.clone()
 	}
@@ -172,7 +194,7 @@ impl ConnectionHandler {
 		.await
 		.whatever_context("Connection timeout")?
 		.whatever_context("Error connecting")?;
-		
+
 		if config.tcp_nodelay {
 			stream.set_nodelay(true).whatever_context("Error setting TCP socket option")?;
 		}
@@ -182,6 +204,24 @@ impl ConnectionHandler {
 			// stream.set_quickack(true).whatever_context("Error setting TCP socket option")?;
 		}
 
+		Ok(if let Some(ref tls) = config.tls {
+			let connector = Self::make_tls_connector(tls)?;
+			Connection::Tls(
+				connector
+					.connect(&config.address, stream)
+					.await
+					.whatever_context("Error connecting")?,
+			)
+		} else {
+			Connection::Tcp(stream)
+		})
+	}
+
+	#[instrument(level = "debug")]
+	async fn make_connection_with_stream(
+		config: &ClientConfig,
+		stream: TcpStream,
+	) -> Result<Connection, Error> {
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
 			Connection::Tls(

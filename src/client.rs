@@ -111,7 +111,8 @@ impl AsyncWrite for Connection {
 
 #[async_trait]
 pub trait OnNewObjects {
-	async fn on_new_objects(&self, asdu: Asdu) -> Vec<Asdu>;
+	// Return `Ok` with response ASDUs ( if any ), return `Err` to disconnect.
+	async fn on_new_objects(&self, asdu: Asdu) -> Result<Vec<Asdu>, Error>;
 	#[cfg(feature = "extra-callbacks")]
 	async fn on_close(&self);
 }
@@ -144,6 +145,45 @@ impl Client {
 			out_buffer_full: Arc::new(AtomicBool::new(false)),
 			connection_handler_state: None,
 		}
+	}
+
+	#[must_use]
+	pub async fn new_server_side(
+		stream: TcpStream,
+		mut config: ClientConfig,
+		callback: Arc<dyn OnNewObjects + Send + Sync>,
+	) -> Result<Self, Error> {
+		// Reconnecting should be done by clients.
+		config.auto_reconnect = false;
+
+		let out_buffer_full = Arc::new(AtomicBool::new(false));
+		let (tx, rx) = mpsc::channel(1024);
+		let mut connection_handler = ConnectionHandler::new_server_side(
+			stream,
+			callback.clone(),
+			config.clone(),
+			rx,
+			out_buffer_full.clone(),
+		)
+		.await?;
+
+		let connection_handler_state = Some(connection_handler.get_state());
+
+		let receive_task = Some(tokio::spawn(async move {
+			connection_handler
+				.run()
+				.await
+				.inspect_err(|e| tracing::error!("Error in running connection handler: {e}"))
+		}));
+
+		return Ok(Self {
+			config,
+			callback,
+			receive_task,
+			write_tx: Some(tx),
+			out_buffer_full,
+			connection_handler_state,
+		});
 	}
 
 	#[instrument(level = "debug")]

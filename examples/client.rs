@@ -4,13 +4,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use iec104::{
-	asdu::Asdu,
-	client::{Client, OnNewObjects, errors::ClientError},
-	config::ClientConfig,
-	types::{
+	asdu::Asdu, client::{Client, OnNewObjects, errors::ClientError}, config::ClientConfig, error::Error, types::{
 		commands::Rcs,
 		information_elements::{Dpi, Spi},
-	},
+	}
 };
 use snafu::{ResultExt as _, Whatever, whatever};
 use tokio::{
@@ -85,9 +82,9 @@ struct MyCallback;
 
 #[async_trait]
 impl OnNewObjects for MyCallback {
-	async fn on_new_objects(&self, _asdu: Asdu)->Vec<Asdu> {
+	async fn on_new_objects(&self, _asdu: Asdu) -> Result<Vec<Asdu>, Error> {
 		// tracing::info!("Received objects: {objects:?}");
-		return Vec::new();
+		return Ok(Vec::new());
 	}
 }
 
