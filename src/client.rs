@@ -112,6 +112,8 @@ impl AsyncWrite for Connection {
 #[async_trait]
 pub trait OnNewObjects {
 	async fn on_new_objects(&self, asdu: Asdu);
+	#[cfg(feature = "extra-callbacks")]
+	async fn on_close(&self);
 }
 
 pub struct Client {
