@@ -117,38 +117,35 @@ impl<'a> ReceiveHandler<'a> {
 		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
 		let mut buffer = [0; 255];
-		let mut send_queue=VecDeque::new();
+		let mut send_queue = VecDeque::new();
 
 		loop {
 			select! {
 				apdu = Self::receive_apdu(&mut self.read_connection,	&mut buffer) => {
-					if let Ok(apdu) = apdu {
-						match apdu.frame {
-							Frame::I(i) => {
-								self.handle_receive_i_frame(&i)?;
-								let new_t2_instant = Instant::now() + self.config.protocol.t2;
-								if new_t2_instant < self.t2.deadline() {
-									self.t2.as_mut().reset(new_t2_instant);
-								}
-								let responses = self.callback.on_new_objects(i.asdu).await?;
-								for response in responses {
-									send_queue.push_back(response);
-								}
+					let apdu=apdu.whatever_context("Error receiving APDU")?;
+					match apdu.frame {
+						Frame::I(i) => {
+							self.handle_receive_i_frame(&i)?;
+							let new_t2_instant = Instant::now() + self.config.protocol.t2;
+							if new_t2_instant < self.t2.deadline() {
+								self.t2.as_mut().reset(new_t2_instant);
 							}
-							Frame::S(s) => {
-								self.handle_receive_s_frame(&s)?;
-							}
-							Frame::U(u) => {
-								let should_stop = self.handle_receive_u_frame(&u).await?;
-								if should_stop {
-									return Ok(());
-								}
+							let responses = self.callback.on_new_objects(i.asdu).await?;
+							for response in responses {
+								send_queue.push_back(response);
 							}
 						}
-						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
-					} else {
-						whatever!("Error receiving APDU");
+						Frame::S(s) => {
+							self.handle_receive_s_frame(&s)?;
+						}
+						Frame::U(u) => {
+							let should_stop = self.handle_receive_u_frame(&u).await?;
+							if should_stop {
+								return Ok(());
+							}
+						}
 					}
+					self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 				}
 				Some(cmd) = self.rx.recv() => {
 					match cmd {
@@ -189,17 +186,36 @@ impl<'a> ReceiveHandler<'a> {
 				);
 				self.confirm_all_messages().await?;
 			}
-			while !send_queue.is_empty(){
+			while !send_queue.is_empty() {
 				// Some ASDUs are wait to be sent
-				if self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize{
+				if self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize {
 					// Out buffer is full, wait until next time
 					break;
 				}
 				// It is guranteed that `send_queue` is not empty.
-				let asdu=send_queue.pop_front().unwrap();
-				Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
-				self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
-				self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1));
+				let asdu = send_queue.pop_front().unwrap();
+				Self::handle_send_asdu(
+					asdu,
+					&mut self.sent_counter,
+					self.received_counter,
+					self.write_connection,
+					&mut self.unacknowledged_seq_num,
+					self.config.protocol.k,
+					&mut self.unacknowledged_rcv_frames,
+				)
+				.await
+				.whatever_context("Error sending command")?;
+				self.out_buffer_full.store(
+					self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize,
+					std::sync::atomic::Ordering::Relaxed,
+				);
+				self.t1_i.as_mut().reset(
+					self.unacknowledged_seq_num
+						.front()
+						.map_or(Instant::now() + *TIMER_UNSET, |(_, time)| {
+							*time + self.config.protocol.t1
+						}),
+				);
 			}
 		}
 	}
