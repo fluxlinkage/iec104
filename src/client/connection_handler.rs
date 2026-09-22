@@ -7,6 +7,7 @@ use tokio::{
 	net::TcpStream,
 	sync::mpsc,
 };
+#[cfg(feature = "tokio-native-tls")]
 use tokio_native_tls::{
 	TlsConnector,
 	native_tls::{Certificate, Identity},
@@ -205,13 +206,18 @@ impl ConnectionHandler {
 		}
 
 		Ok(if let Some(ref tls) = config.tls {
-			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
-				connector
-					.connect(&config.address, stream)
-					.await
-					.whatever_context("Error connecting")?,
-			)
+#[cfg(feature = "tokio-native-tls")]
+			{
+				let connector = Self::make_tls_connector(tls)?;
+				Connection::Tls(
+					connector
+						.connect(&config.address, stream)
+						.await
+						.whatever_context("Error connecting")?,
+				)
+			}
+#[cfg(not(feature = "tokio-native-tls"))]
+			snafu::whatever!("Feature \"tokio-native-tls\" not enabled!");
 		} else {
 			Connection::Tcp(stream)
 		})
@@ -231,18 +237,24 @@ impl ConnectionHandler {
 			// stream.set_quickack(true).whatever_context("Error setting TCP socket option")?;
 		}
 		Ok(if let Some(ref tls) = config.tls {
-			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
-				connector
-					.connect(&config.address, stream)
-					.await
-					.whatever_context("Error connecting")?,
-			)
+#[cfg(feature = "tokio-native-tls")]
+			{
+				let connector = Self::make_tls_connector(tls)?;
+				Connection::Tls(
+					connector
+						.connect(&config.address, stream)
+						.await
+						.whatever_context("Error connecting")?,
+				)
+			}
+#[cfg(not(feature = "tokio-native-tls"))]
+			snafu::whatever!("Feature \"tokio-native-tls\" not enabled!");
 		} else {
 			Connection::Tcp(stream)
 		})
 	}
 
+	#[cfg(feature = "tokio-native-tls")]
 	#[instrument(level = "debug")]
 	fn make_tls_connector(tls: &TlsClientConfig) -> Result<TlsConnector, Error> {
 		let root_cert: Option<Certificate> = tls
